@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const PIN = "2507";
 
@@ -7,8 +7,8 @@ const PROFILES = {
     label: "Personal",
     icon: "👤",
     categories: {
-      income: ["Sprint", "La Toscana", "Ropa", "Otros"],
-      expense: ["Ropa", "Sprint", "La Toscana", "Tarjeta crédito", "Comida", "Jodas", "Alcohol", "Otros"],
+      income: ["Sprint", "La Toscana", "Ropa", "Apuestas", "Otros"],
+      expense: ["Ropa", "Sprint", "La Toscana", "Tarjeta crédito", "Comida", "Jodas", "Alcohol", "Apuestas", "Otros"],
     },
   },
   toscana: {
@@ -25,6 +25,8 @@ const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov
 
 const formatARS = (n) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
+const formatUSD = (n) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 
 function loadTransactions(profile) {
   try { const s = localStorage.getItem(`cf_${profile}`); return s ? JSON.parse(s) : []; }
@@ -35,6 +37,13 @@ function saveTransactions(profile, txs) {
 }
 function loadGoal() {
   try { return Number(localStorage.getItem("cf_goal_personal")) || 0; } catch { return 0; }
+}
+function loadPayments() {
+  try { const s = localStorage.getItem("cf_payments"); return s ? JSON.parse(s) : []; }
+  catch { return []; }
+}
+function savePayments(payments) {
+  try { localStorage.setItem("cf_payments", JSON.stringify(payments)); } catch {}
 }
 
 // ── CHART ────────────────────────────────────────────────────
@@ -139,11 +148,215 @@ function ProfileSelector({ onSelect }) {
   );
 }
 
+// ── PAYMENTS TAB ─────────────────────────────────────────────
+function PaymentsTab({ payments, setPayments }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name:"", date:new Date().toISOString().split("T")[0], amount:"", currency:"ARS" });
+  const [filterPaid, setFilterPaid] = useState("pending");
+
+  const handleAdd = () => {
+    if (!form.name || !form.amount) return;
+    const newP = { ...form, amount:Number(form.amount), id:Date.now(), paid:false, paidDate:null };
+    const updated = [newP, ...payments];
+    setPayments(updated);
+    savePayments(updated);
+    setForm({ name:"", date:new Date().toISOString().split("T")[0], amount:"", currency:"ARS" });
+    setShowForm(false);
+  };
+
+  const togglePaid = (id) => {
+    const updated = payments.map(p =>
+      p.id === id ? { ...p, paid:!p.paid, paidDate:!p.paid ? new Date().toISOString().split("T")[0] : null } : p
+    );
+    setPayments(updated);
+    savePayments(updated);
+  };
+
+  const handleDelete = (id) => {
+    const updated = payments.filter(p => p.id !== id);
+    setPayments(updated);
+    savePayments(updated);
+  };
+
+  const filtered = filterPaid === "all" ? payments
+    : filterPaid === "pending" ? payments.filter(p => !p.paid)
+    : payments.filter(p => p.paid);
+
+  const totalPending = payments.filter(p => !p.paid);
+  const arsPending = totalPending.filter(p => p.currency==="ARS").reduce((s,p) => s+p.amount, 0);
+  const usdPending = totalPending.filter(p => p.currency==="USD").reduce((s,p) => s+p.amount, 0);
+
+  return (
+    <div>
+      {totalPending.length > 0 && (
+        <div className="card" style={{ marginBottom:12 }}>
+          <div className="section-title">Pendiente de pago</div>
+          <div style={{ display:"flex", gap:20 }}>
+            {arsPending > 0 && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>ARS</div>
+                <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:700, color:"#f87171" }}>{formatARS(arsPending)}</div>
+              </div>
+            )}
+            {usdPending > 0 && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>USD</div>
+                <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:700, color:"#fb923c" }}>{formatUSD(usdPending)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {["pending","paid","all"].map(f => (
+          <button key={f} className={`tab-btn ${filterPaid===f?"active":""}`} onClick={() => setFilterPaid(f)}>
+            {f==="pending"?"pendientes":f==="paid"?"pagados":"todos"}
+          </button>
+        ))}
+      </div>
+
+      <div className="card">
+        {filtered.length === 0 && (
+          <div style={{ color:"#555", fontSize:12, textAlign:"center", padding:20 }}>
+            {filterPaid==="pending" ? "No hay pagos pendientes 🎉" : "Sin pagos aún"}
+          </div>
+        )}
+        {[...filtered].sort((a,b) => {
+          if (a.paid !== b.paid) return a.paid ? 1 : -1;
+          return a.date.localeCompare(b.date);
+        }).map(p => (
+          <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 0", borderBottom:"1px solid #1e1e1e" }}>
+            <button onClick={() => togglePaid(p.id)} style={{
+              width:28, height:28, borderRadius:"50%", flexShrink:0,
+              background: p.paid ? "#0d2016" : "#1a1a1a",
+              border: p.paid ? "1.5px solid #4ade80" : "1.5px solid #2a2a2a",
+              color: p.paid ? "#4ade80" : "#444",
+              fontSize:14, cursor:"pointer", transition:"all 0.2s",
+              display:"flex", alignItems:"center", justifyContent:"center"
+            }}>
+              {p.paid ? "✓" : ""}
+            </button>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:13, color: p.paid ? "#555" : "#e8e0d0", textDecoration: p.paid ? "line-through" : "none", marginBottom:3 }}>
+                {p.name}
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span style={{ fontSize:10, color:"#555" }}>{p.date}</span>
+                {p.paid && p.paidDate && <span style={{ fontSize:10, color:"#4ade80" }}>pagado {p.paidDate}</span>}
+              </div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:700, color: p.paid ? "#555" : p.currency==="USD" ? "#fb923c" : "#f87171" }}>
+                {p.currency==="USD" ? formatUSD(p.amount) : formatARS(p.amount)}
+              </div>
+              <div style={{ fontSize:9, color:"#444", letterSpacing:1 }}>{p.currency}</div>
+            </div>
+            <button className="del-btn" onClick={() => handleDelete(p.id)}>×</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ position:"fixed", bottom:28, right:24, zIndex:100 }}>
+        <button className="fab" onClick={() => setShowForm(true)}>+</button>
+      </div>
+
+      {showForm && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowForm(false)}>
+          <div className="modal">
+            <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:700, marginBottom:20 }}>Nuevo pago</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              <input type="text" placeholder="Nombre del pago (ej: Alquiler)" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} />
+              <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} />
+              <div style={{ display:"flex", gap:8 }}>
+                <input type="number" placeholder="Monto" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} style={{ flex:1 }} />
+                <div style={{ display:"flex", background:"#1a1a1a", border:"1px solid #2a2a2a", borderRadius:8, overflow:"hidden", flexShrink:0 }}>
+                  {["ARS","USD"].map(cur => (
+                    <button key={cur} onClick={() => setForm({...form,currency:cur})} style={{
+                      padding:"10px 14px", border:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace", fontSize:12,
+                      background: form.currency===cur ? "#2a2a2a" : "transparent",
+                      color: form.currency===cur ? "#e8e0d0" : "#555",
+                      transition:"all 0.2s"
+                    }}>{cur}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:10, marginTop:4 }}>
+                <button className="btn-ghost" onClick={() => setShowForm(false)} style={{ flex:1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={handleAdd} style={{ flex:2 }}>Agregar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DROPDOWN MENU ─────────────────────────────────────────────
+function DropdownMenu({ profile, onExport, onImport, onSwitch, importRef }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handle = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handle);
+    document.addEventListener("touchstart", handle);
+    return () => { document.removeEventListener("mousedown", handle); document.removeEventListener("touchstart", handle); };
+  }, []);
+
+  const items = [
+    { label: "↓ Exportar CSV", action: () => { onExport(); setOpen(false); } },
+    { label: "↑ Importar CSV", action: () => { importRef.current?.click(); setOpen(false); } },
+    { label: `${PROFILES[profile].label} — cambiar perfil`, action: () => { onSwitch(); setOpen(false); } },
+  ];
+
+  return (
+    <div ref={menuRef} style={{ position:"relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background:"#1a1a1a", border:"1px solid #2a2a2a", borderRadius:8,
+        color:"#e8e0d0", width:36, height:36, cursor:"pointer",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:18, letterSpacing:1, transition:"all 0.2s",
+        fontFamily:"monospace"
+      }}>⋯</button>
+
+      {open && (
+        <div style={{
+          position:"absolute", top:44, right:0, zIndex:500,
+          background:"#1a1a1a", border:"1px solid #3a3a3a", borderRadius:12,
+          overflow:"hidden", minWidth:210,
+          boxShadow:"0 8px 32px rgba(0,0,0,0.9)",
+          opacity:1,
+          animation:"fadeIn 0.15s ease"
+        }}>
+          {items.map((item, i) => (
+            <button key={i} onClick={item.action} style={{
+              display:"block", width:"100%", padding:"14px 18px",
+              background:"none", border:"none",
+              borderBottom: i < items.length-1 ? "1px solid #2a2a2a" : "none",
+              color:"#e8e0d0", fontFamily:"'DM Mono',monospace", fontSize:12,
+              textAlign:"left", cursor:"pointer", transition:"background 0.15s",
+              letterSpacing:"0.5px"
+            }}
+              onMouseEnter={e => e.currentTarget.style.background="#2a2a2a"}
+              onMouseLeave={e => e.currentTarget.style.background="none"}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function CashFlow() {
   const [unlocked, setUnlocked] = useState(false);
   const [profile, setProfile] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [form, setForm] = useState({ type:"income", category:"", amount:"", desc:"", date:new Date().toISOString().split("T")[0] });
   const [activeTab, setActiveTab] = useState("dashboard");
   const [filter, setFilter] = useState("all");
@@ -156,10 +369,13 @@ export default function CashFlow() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalInput, setGoalInput] = useState("");
   const [animateIn, setAnimateIn] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const importRef = useRef(null);
 
   useEffect(() => {
     if (profile) {
       setTransactions(loadTransactions(profile));
+      if (profile === "personal") setPayments(loadPayments());
       const cats = PROFILES[profile].categories;
       setForm({ type:"income", category:cats.income[0], amount:"", desc:"", date:new Date().toISOString().split("T")[0] });
       setQuickCat(cats.expense[0]);
@@ -173,6 +389,52 @@ export default function CashFlow() {
   }, [profile]);
 
   useEffect(() => { if (profile) saveTransactions(profile, transactions); }, [transactions, profile]);
+
+  const exportCSV = () => {
+    const rows = [["Fecha","Tipo","Categoría","Descripción","Monto"]];
+    [...transactions].sort((a,b) => b.date.localeCompare(a.date)).forEach(t => {
+      rows.push([t.date, t.type==="income"?"Ingreso":"Gasto", t.category, `"${t.desc}"`, t.amount]);
+    });
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=`cashflow_${profile}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importCSV = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const lines = text.split("\n").filter(l => l.trim());
+        const imported = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",");
+          if (cols.length < 5) continue;
+          const date = cols[0].trim();
+          const type = cols[1].trim() === "Ingreso" ? "income" : "expense";
+          const category = cols[2].trim();
+          const desc = cols[3].trim().replace(/^"|"$/g, "");
+          const amount = Number(cols[4].trim());
+          if (!date || isNaN(amount)) continue;
+          imported.push({ date, type, category, desc, amount, id: Date.now() + i });
+        }
+        if (imported.length === 0) { setImportMsg("No se encontraron datos válidos"); return; }
+        setTransactions(imported);
+        saveTransactions(profile, imported);
+        setImportMsg(`✓ ${imported.length} movimientos importados`);
+        setTimeout(() => setImportMsg(null), 3000);
+      } catch {
+        setImportMsg("Error al leer el archivo");
+        setTimeout(() => setImportMsg(null), 3000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} />;
   if (!profile) return <ProfileSelector onSelect={p => setProfile(p)} />;
@@ -194,10 +456,7 @@ export default function CashFlow() {
 
   const saveGoal = () => {
     const g = Number(goalInput);
-    if (!isNaN(g) && g > 0) {
-      setSavingGoal(g);
-      localStorage.setItem("cf_goal_personal", g);
-    }
+    if (!isNaN(g) && g > 0) { setSavingGoal(g); localStorage.setItem("cf_goal_personal", g); }
     setEditingGoal(false);
   };
 
@@ -221,18 +480,6 @@ export default function CashFlow() {
     setShowQuick(false);
   };
 
-  const exportCSV = () => {
-    const rows = [["Fecha","Tipo","Categoría","Descripción","Monto"]];
-    [...transactions].sort((a,b) => b.date.localeCompare(a.date)).forEach(t => {
-      rows.push([t.date, t.type==="income"?"Ingreso":"Gasto", t.category, t.desc, t.amount]);
-    });
-    const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type:"text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download=`cashflow_${profile}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const handleDelete = (id) => setTransactions(prev => prev.filter(t => t.id!==id));
   const filtered = filter==="all" ? monthFiltered : monthFiltered.filter(t => t.type===filter);
   const maxBar = Math.max(...byCategory("income").concat(byCategory("expense")).map(([,v]) => v), 1);
@@ -247,6 +494,12 @@ export default function CashFlow() {
     return Object.entries(map).sort().slice(-6);
   };
 
+  const tabs = profile === "personal"
+    ? ["dashboard","gráfico","mensual","pagos","movimientos"]
+    : ["dashboard","gráfico","mensual","movimientos"];
+
+  const pendingCount = payments.filter(p => !p.paid).length;
+
   return (
     <div style={{ minHeight:"100vh", background:"#0d0d0d", fontFamily:"'DM Mono','Courier New',monospace", color:"#e8e0d0" }}>
       <style>{`
@@ -256,8 +509,9 @@ export default function CashFlow() {
         body{background-color:#0d0d0d!important;overscroll-behavior-y:none;margin:0;}
         .fade-in{opacity:0;transform:translateY(16px);animation:fadeUp 0.5s ease forwards;}
         @keyframes fadeUp{to{opacity:1;transform:translateY(0);}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
         .card{background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:20px;transition:border-color 0.2s;}
-        .tab-btn{background:none;border:none;color:#666;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;padding:8px 12px;border-radius:6px;transition:all 0.2s;}
+        .tab-btn{background:none;border:none;color:#666;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;padding:8px 12px;border-radius:6px;transition:all 0.2s;position:relative;}
         .tab-btn.active{background:#1e1e1e;color:#e8e0d0;}
         .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;letter-spacing:1px;text-transform:uppercase;font-weight:500;}
         .pill-income{background:#0d2016;color:#4ade80;border:1px solid #1a3a22;}
@@ -290,27 +544,34 @@ export default function CashFlow() {
         .type-btn.income-active{background:#0d2016;color:#4ade80;}
         .type-btn.expense-active{background:#200d0d;color:#f87171;}
         .section-title{font-family:'Unbounded',sans-serif;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#555;margin-bottom:16px;}
-        .switch-btn{background:none;border:1px solid #2a2a2a;border-radius:6px;color:#555;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:4px 10px;cursor:pointer;transition:all 0.2s;}
-        .switch-btn:hover{border-color:#555;color:#e8e0d0;}
         .month-chip{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;color:#666;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:4px 12px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
         .month-chip.active{background:#1e1e1e;border-color:#c8b898;color:#c8b898;}
         .month-scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;scrollbar-width:none;}
         .month-scroll::-webkit-scrollbar{display:none;}
         .goal-bar-track{height:8px;background:#1e1e1e;border-radius:4px;overflow:hidden;margin-top:10px;}
         .goal-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#1a5c30,#4ade80);transition:width 0.8s cubic-bezier(.4,0,.2,1);}
+        .badge{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#f87171;}
+        .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:12px 20px;font-size:12px;color:#4ade80;z-index:999;animation:fadeIn 0.2s ease;}
       `}</style>
+
+      {/* INPUT OCULTO PARA IMPORTAR */}
+      <input ref={importRef} type="file" accept=".csv" onChange={importCSV} style={{ display:"none" }} />
+
+      {/* TOAST */}
+      {importMsg && <div className="toast">{importMsg}</div>}
 
       {/* HEADER */}
       <div style={{ padding:"28px 24px 0", maxWidth:480, margin:"0 auto" }}>
         <div className={animateIn?"fade-in":""}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
             <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:9, letterSpacing:4, color:"#555" }}>FLUJO DE CAJA</div>
-            <div style={{ display:"flex", gap:8 }}>
-              <button className="switch-btn" onClick={exportCSV}>↓ CSV</button>
-              <button className="switch-btn" onClick={() => { setProfile(null); setActiveTab("dashboard"); }}>
-                {PROFILES[profile].label} ↗
-              </button>
-            </div>
+            <DropdownMenu
+              profile={profile}
+              onExport={exportCSV}
+              onImport={() => importRef.current?.click()}
+              onSwitch={() => { setProfile(null); setActiveTab("dashboard"); }}
+              importRef={importRef}
+            />
           </div>
           <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:22, fontWeight:900, letterSpacing:-1, lineHeight:1.1, marginBottom:4 }}>
             {balance>=0?"+":""}{formatARS(balance)}
@@ -322,12 +583,15 @@ export default function CashFlow() {
         </div>
 
         <div style={{ display:"flex", gap:4, marginTop:24, marginBottom:16, overflowX:"auto" }}>
-          {["dashboard","gráfico","mensual","movimientos"].map(tab => (
-            <button key={tab} className={`tab-btn ${activeTab===tab?"active":""}`} onClick={() => setActiveTab(tab)}>{tab}</button>
+          {tabs.map(tab => (
+            <button key={tab} className={`tab-btn ${activeTab===tab?"active":""}`} onClick={() => setActiveTab(tab)}>
+              {tab}
+              {tab==="pagos" && pendingCount > 0 && <span className="badge" />}
+            </button>
           ))}
         </div>
 
-        {availableMonths.length > 0 && (
+        {activeTab !== "pagos" && availableMonths.length > 0 && (
           <div className="month-scroll">
             <button className={`month-chip ${!selectedMonth?"active":""}`} onClick={() => setSelectedMonth(null)}>Todo</button>
             {availableMonths.map(m => {
@@ -343,6 +607,8 @@ export default function CashFlow() {
       </div>
 
       <div style={{ maxWidth:480, margin:"0 auto", padding:"0 24px 120px" }}>
+
+        {activeTab==="pagos" && <PaymentsTab payments={payments} setPayments={setPayments} />}
 
         {activeTab==="dashboard" && (
           <>
@@ -415,7 +681,7 @@ export default function CashFlow() {
                   )}
                 </div>
               ) : (
-                <button onClick={() => { setEditingGoal(true); setGoalInput(""); }} style={{ background:"#161616", border:"1px dashed #2a2a2a", borderRadius:12, padding:"14px 20px", cursor:"pointer", color:"#555", fontFamily:"'DM Mono',monospace", fontSize:11, width:"100%", marginBottom:12, textAlign:"left" }}>
+                <button onClick={() => setEditingGoal(true)} style={{ background:"#161616", border:"1px dashed #2a2a2a", borderRadius:12, padding:"14px 20px", cursor:"pointer", color:"#555", fontFamily:"'DM Mono',monospace", fontSize:11, width:"100%", marginBottom:12, textAlign:"left" }}>
                   + Establecer meta de ahorro mensual
                 </button>
               )
@@ -547,10 +813,12 @@ export default function CashFlow() {
         )}
       </div>
 
-      <div className="fab-wrap">
-        <button className="fab-secondary" onClick={() => setShowQuick(true)}>⚡</button>
-        <button className="fab" onClick={() => setShowForm(true)}>+</button>
-      </div>
+      {activeTab !== "pagos" && (
+        <div className="fab-wrap">
+          <button className="fab-secondary" onClick={() => setShowQuick(true)}>⚡</button>
+          <button className="fab" onClick={() => setShowForm(true)}>+</button>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
@@ -597,4 +865,3 @@ export default function CashFlow() {
     </div>
   );
 }
-
