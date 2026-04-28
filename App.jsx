@@ -4,7 +4,7 @@ const formatARS = (n) =>
   new Intl.NumberFormat("es-AR", { style:"currency", currency:"ARS", maximumFractionDigits:0 }).format(n);
 
 const METODOS = ["Transferencia", "Mercado Pago", "Efectivo"];
-const CAT_EGRESO = ["Compu","Comida","Joda","Nafta","Inversiones","Ropa","Otros"];
+const CAT_EGRESO = ["Costo","Comisiones","Compu","Comida","Joda","Nafta","Inversiones","Ropa","Otros"];
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const EMOJIS = ["🐟","⚽","🎨","🍕","👕","💈","🛒","🔧","📦","🏪","🚗","📱","☕","🌿","💊"];
 const COLORS = ["#4ade80","#fb923c","#60a5fa","#f87171","#c8b898","#a78bfa","#34d399","#fbbf24","#f472b6"];
