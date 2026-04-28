@@ -221,6 +221,32 @@ function NegocioDetail({ negocio, onBack, onDelete }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#0d0d0d",fontFamily:"'DM Mono',monospace",color:"#e8e0d0"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Unbounded:wght@400;700;900&display=swap');
+        *,*::before,*::after{box-sizing:border-box;}
+        html{background-color:#0d0d0d!important;}
+        body{background-color:#0d0d0d!important;overscroll-behavior-y:none;margin:0;}
+        @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        input,select{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;color:#e8e0d0;font-family:'DM Mono',monospace;font-size:13px;padding:10px 14px;width:100%;outline:none;transition:border-color 0.2s;-webkit-appearance:none;}
+        input:focus,select:focus{border-color:#c8b898;}
+        select option{background:#1a1a1a;}
+        .btn-primary{background:#c8b898;color:#0d0d0d;border:none;border-radius:8px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:1px;font-weight:500;padding:12px 24px;cursor:pointer;}
+        .btn-ghost{background:none;color:#666;border:1px solid #2a2a2a;border-radius:8px;font-family:'DM Mono',monospace;font-size:12px;padding:12px 24px;cursor:pointer;}
+        .del-btn{background:none;border:none;color:#444;cursor:pointer;font-size:20px;padding:4px 8px;transition:color 0.2s;line-height:1;}
+        .del-btn:hover{color:#f87171;}
+        .edit-btn{background:none;border:1px solid #2a2a2a;border-radius:6px;color:#888;cursor:pointer;font-size:14px;padding:5px 10px;transition:all 0.2s;line-height:1;font-family:monospace;}
+        .edit-btn:hover{border-color:#888;color:#e8e0d0;}
+        .fab-wrap{position:fixed;bottom:28px;right:24px;z-index:100;}
+        .fab{width:52px;height:52px;color:#0d0d0d;border:none;border-radius:50%;font-size:24px;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:flex-end;justify-content:center;z-index:200;backdrop-filter:blur(4px);}
+        .modal{background:#161616;border:1px solid #2a2a2a;border-radius:20px 20px 0 0;padding:28px 24px 48px;width:100%;max-width:480px;animation:slideUp 0.3s cubic-bezier(.4,0,.2,1);}
+        .type-toggle{display:flex;background:#1a1a1a;border-radius:10px;padding:4px;margin-bottom:16px;}
+        .type-btn{flex:1;padding:10px;border:none;border-radius:7px;font-family:'DM Mono',monospace;font-size:12px;cursor:pointer;transition:all 0.2s;background:none;color:#666;}
+        .type-btn.income-active{background:#0d2016;color:#4ade80;}
+        .type-btn.expense-active{background:#200d0d;color:#f87171;}
+        .switch-btn{background:none;border:1px solid #2a2a2a;border-radius:6px;color:#555;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:4px 10px;cursor:pointer;}
+        .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:12px 20px;font-size:12px;color:#4ade80;z-index:999;}
+      `}</style>
       <input ref={importRef} type="file" accept=".csv" onChange={importCSV} style={{display:"none"}}/>
       {msg&&<div className="toast">{msg}</div>}
 
@@ -375,8 +401,8 @@ function NegocioDetail({ negocio, onBack, onDelete }) {
                 <div style={{fontFamily:"'Unbounded',sans-serif",fontSize:13,fontWeight:700,color:m.tipo==="ingreso"?c:"#f87171"}}>
                   {m.tipo==="ingreso"?"+":"-"}{formatARS(m.amount)}
                 </div>
-                <button onClick={()=>openEdit(m)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:13,padding:"0 4px"}}>✎</button>
-                <button className="del-btn" onClick={()=>handleDelete(m.id)}>×</button>
+                <button onClick={(e)=>{e.stopPropagation();openEdit(m);}} className="edit-btn">✎</button>
+                <button className="del-btn" onClick={(e)=>{e.stopPropagation();handleDelete(m.id);}}>×</button>
               </div>
             ))}
           </div>
@@ -395,7 +421,7 @@ function NegocioDetail({ negocio, onBack, onDelete }) {
             </div>
             <div className="type-toggle">
               <button className={`type-btn ${tipo==="ingreso"?"income-active":""}`} onClick={()=>setTipo("ingreso")}>▲ Ingreso</button>
-              <button className={`type-btn ${tipo==="retiro"?"expense-active":""}`} onClick={()=>setTipo("retiro")}>▼ Retiro</button>
+              <button className={`type-btn ${tipo==="retiro"?"expense-active":""}`} onClick={()=>setTipo("retiro")}>▼ Egreso</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <input type="number" placeholder="Monto en ARS" value={amount} onChange={e=>setAmount(e.target.value)}/>
@@ -404,9 +430,20 @@ function NegocioDetail({ negocio, onBack, onDelete }) {
                 {METODOS.map(m=><option key={m}>{m}</option>)}
               </select>
               {tipo==="retiro"&&(
-                <select value={categoria} onChange={e=>setCategoria(e.target.value)}>
-                  {CAT_EGRESO.map(c=><option key={c}>{c}</option>)}
-                </select>
+                <div>
+                  <div style={{fontSize:11,color:"#555",marginBottom:6,letterSpacing:1}}>CATEGORÍA DEL COSTO</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {CAT_EGRESO.map(cat=>(
+                      <button key={cat} onClick={()=>setCategoria(cat)} style={{
+                        padding:"6px 12px",borderRadius:20,border:"1px solid",cursor:"pointer",
+                        fontFamily:"'DM Mono',monospace",fontSize:11,transition:"all 0.15s",
+                        background:categoria===cat?"#200d0d":"#1a1a1a",
+                        borderColor:categoria===cat?"#f87171":"#2a2a2a",
+                        color:categoria===cat?"#f87171":"#666"
+                      }}>{cat}</button>
+                    ))}
+                  </div>
+                </div>
               )}
               <input type="date" value={date} onChange={e=>setDate(e.target.value)}/>
               <div style={{display:"flex",gap:10,marginTop:4}}>
