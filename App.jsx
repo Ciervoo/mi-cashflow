@@ -796,6 +796,205 @@ function GraficosGenerales({ negocios }) {
   );
 }
 
+function loadPagos() {
+  try { const s=localStorage.getItem("ng_pagos"); return s?JSON.parse(s):[]; } catch { return []; }
+}
+function savePagos(p) { try { localStorage.setItem("ng_pagos",JSON.stringify(p)); } catch {} }
+
+const formatUSD=(n)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n);
+
+// ── PAGOS SCREEN ─────────────────────────────────────────────
+function PagosScreen() {
+  const [pagos, setPagos] = useState(loadPagos);
+  const [showForm, setShowForm] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [amount, setAmount] = useState("");
+  const [moneda, setMoneda] = useState("ARS");
+  const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0]);
+  const [nota, setNota] = useState("");
+  const [filtro, setFiltro] = useState("pendientes"); // pendientes | pagados | todos
+  const [mesFiltro, setMesFiltro] = useState(null);
+
+  useEffect(()=>{savePagos(pagos);},[pagos]);
+
+  const handleAdd=()=>{
+    if(!nombre.trim()||!amount)return;
+    const nuevo={id:Date.now(),nombre:nombre.trim(),amount:Number(amount),moneda,fecha,nota,pagado:false,pagadoDate:null};
+    setPagos(prev=>[nuevo,...prev]);
+    setNombre("");setAmount("");setNota("");
+    setFecha(new Date().toISOString().split("T")[0]);setShowForm(false);
+  };
+  const togglePagado=(id)=>{
+    setPagos(prev=>prev.map(p=>p.id===id?{...p,pagado:!p.pagado,pagadoDate:!p.pagado?new Date().toISOString().split("T")[0]:null}:p));
+  };
+  const deletePago=(id)=>setPagos(prev=>prev.filter(p=>p.id!==id));
+
+  // Agrupar por mes
+  const mesesDisponibles=[...new Set(pagos.map(p=>p.fecha.slice(0,7)))].sort().reverse();
+
+  const pagosFiltrados=pagos.filter(p=>{
+    if(mesFiltro&&!p.fecha.startsWith(mesFiltro))return false;
+    if(filtro==="pendientes")return !p.pagado;
+    if(filtro==="pagados")return p.pagado;
+    return true;
+  });
+
+  // Totales pendientes
+  const pendARSpago=pagos.filter(p=>!p.pagado&&p.moneda==="ARS").reduce((s,p)=>s+p.amount,0);
+  const pendUSDpago=pagos.filter(p=>!p.pagado&&p.moneda==="USD").reduce((s,p)=>s+p.amount,0);
+
+  // Agrupar por mes para mostrar
+  const porMes={};
+  pagosFiltrados.forEach(p=>{
+    const m=p.fecha.slice(0,7);
+    if(!porMes[m])porMes[m]=[];
+    porMes[m].push(p);
+  });
+
+  return (
+    <div style={{maxWidth:480,margin:"0 auto",padding:"0 24px 120px"}}>
+
+      {/* RESUMEN PENDIENTE */}
+      {(pendARSpago>0||pendUSDpago>0)&&(
+        <div style={{background:"#1a0d00",border:"1px solid #fb923c33",borderRadius:12,padding:"14px 20px",marginBottom:12,display:"flex",gap:20,alignItems:"center"}}>
+          <div style={{fontSize:10,color:"#fb923c",letterSpacing:2,flex:1}}>POR PAGAR</div>
+          {pendARSpago>0&&<div style={{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700,color:"#fb923c"}}>{formatARS(pendARSpago)}</div>}
+          {pendUSDpago>0&&<div style={{fontFamily:"'Unbounded',sans-serif",fontSize:14,fontWeight:700,color:"#fbbf24"}}>{formatUSD(pendUSDpago)}</div>}
+        </div>
+      )}
+
+      {/* FILTRO ESTADO */}
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        {[["pendientes","Pendientes"],["pagados","Pagados"],["todos","Todos"]].map(([val,label])=>(
+          <button key={val} className={`chip ${filtro===val?"active":""}`} onClick={()=>setFiltro(val)}>{label}</button>
+        ))}
+      </div>
+
+      {/* FILTRO MES */}
+      {mesesDisponibles.length>1&&(
+        <div className="range-scroll" style={{marginBottom:16}}>
+          <button className={`chip ${!mesFiltro?"active":""}`} onClick={()=>setMesFiltro(null)}>Todos los meses</button>
+          {mesesDisponibles.map(m=>{
+            const [y,mo]=m.split("-");
+            return <button key={m} className={`chip ${mesFiltro===m?"active":""}`} onClick={()=>setMesFiltro(m)}>{MONTHS[parseInt(mo)-1]} {y}</button>;
+          })}
+        </div>
+      )}
+
+      {/* LISTA AGRUPADA POR MES */}
+      {Object.keys(porMes).length===0&&(
+        <div style={{textAlign:"center",color:"#555",fontSize:12,padding:40}}>
+          {filtro==="pendientes"?"No hay pagos pendientes 🎉":"Sin pagos registrados"}
+        </div>
+      )}
+
+      {Object.entries(porMes).sort().reverse().map(([mes,items])=>{
+        const [y,mo]=mes.split("-");
+        const totalARSMes=items.filter(p=>p.moneda==="ARS").reduce((s,p)=>s+p.amount,0);
+        const totalUSDMes=items.filter(p=>p.moneda==="USD").reduce((s,p)=>s+p.amount,0);
+        return (
+          <div key={mes} style={{marginBottom:20}}>
+            {/* Header mes */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"0 4px"}}>
+              <div style={{fontFamily:"'Unbounded',sans-serif",fontSize:11,fontWeight:700,color:"#888"}}>
+                {MONTHS[parseInt(mo)-1]} {y}
+              </div>
+              <div style={{display:"flex",gap:10,fontSize:11,color:"#555"}}>
+                {totalARSMes>0&&<span>{formatARS(totalARSMes)}</span>}
+                {totalUSDMes>0&&<span style={{color:"#fbbf24"}}>{formatUSD(totalUSDMes)}</span>}
+              </div>
+            </div>
+
+            <div className="card-dark" style={{padding:"4px 0"}}>
+              {items.sort((a,b)=>a.fecha.localeCompare(b.fecha)).map((p,i)=>(
+                <div key={p.id} style={{
+                  display:"flex",alignItems:"center",gap:12,padding:"14px 20px",
+                  borderBottom:i<items.length-1?"1px solid #1e1e1e":"none",
+                  opacity:p.pagado?0.6:1,transition:"opacity 0.2s"
+                }}>
+                  {/* CHECK */}
+                  <button onClick={()=>togglePagado(p.id)} style={{
+                    width:30,height:30,borderRadius:"50%",flexShrink:0,cursor:"pointer",
+                    background:p.pagado?"#0d2016":"#1a1a1a",
+                    border:p.pagado?"1.5px solid #4ade80":"1.5px solid #333",
+                    color:p.pagado?"#4ade80":"transparent",
+                    fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",
+                    transition:"all 0.2s"
+                  }}>✓</button>
+
+                  {/* INFO */}
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,color:p.pagado?"#555":"#e8e0d0",textDecoration:p.pagado?"line-through":"none",marginBottom:3}}>
+                      {p.nombre}
+                    </div>
+                    <div style={{fontSize:10,color:"#555",display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <span>{p.fecha}</span>
+                      {p.nota&&<span>· {p.nota}</span>}
+                      {p.pagado&&p.pagadoDate&&<span style={{color:"#4ade80"}}>· pagado {p.pagadoDate}</span>}
+                    </div>
+                  </div>
+
+                  {/* MONTO */}
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontFamily:"'Unbounded',sans-serif",fontSize:13,fontWeight:700,
+                      color:p.pagado?"#555":p.moneda==="USD"?"#fbbf24":"#f87171"}}>
+                      {p.moneda==="USD"?formatUSD(p.amount):formatARS(p.amount)}
+                    </div>
+                    <div style={{fontSize:9,color:"#444",letterSpacing:1}}>{p.moneda}</div>
+                  </div>
+
+                  <button className="del-btn" onClick={()=>deletePago(p.id)}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* FAB */}
+      <div className="fab-wrap">
+        <button className="fab" style={{background:"#c8b898"}} onClick={()=>setShowForm(true)}>+</button>
+      </div>
+
+      {/* MODAL */}
+      {showForm&&(
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
+          <div className="modal">
+            <div style={{fontFamily:"'Unbounded',sans-serif",fontSize:13,fontWeight:700,marginBottom:20}}>Nuevo pago</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <input type="text" placeholder="Nombre del pago (ej: Alquiler)" value={nombre} onChange={e=>setNombre(e.target.value)}/>
+
+              {/* MONTO + MONEDA */}
+              <div style={{display:"flex",gap:8}}>
+                <input type="number" placeholder="Monto" value={amount} onChange={e=>setAmount(e.target.value)} style={{flex:1}}/>
+                <div style={{display:"flex",background:"#1a1a1a",border:"1px solid #2a2a2a",borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                  {["ARS","USD"].map(cur=>(
+                    <button key={cur} onClick={()=>setMoneda(cur)} style={{
+                      padding:"10px 14px",border:"none",cursor:"pointer",
+                      fontFamily:"'DM Mono',monospace",fontSize:12,transition:"all 0.2s",
+                      background:moneda===cur?"#2a2a2a":"transparent",
+                      color:moneda===cur?"#e8e0d0":"#555"
+                    }}>{cur}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{fontSize:11,color:"#555",marginBottom:-4}}>Fecha de vencimiento</div>
+              <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)}/>
+              <textarea rows={2} placeholder="Nota (opcional)" value={nota} onChange={e=>setNota(e.target.value)}/>
+
+              <div style={{display:"flex",gap:10,marginTop:4}}>
+                <button className="btn-ghost" onClick={()=>setShowForm(false)} style={{flex:1}}>Cancelar</button>
+                <button className="btn-primary" onClick={handleAdd} style={{flex:2}}>Agregar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN ─────────────────────────────────────────────────────
 export default function App() {
   const [negocios, setNegocios] = useState(()=>{migrar();return loadNegocios();});
@@ -860,7 +1059,7 @@ export default function App() {
         </div>
 
         <div style={{display:"flex",background:"#111",borderRadius:10,padding:4,marginBottom:24}}>
-          {["negocios","gráficos"].map(t=>(
+          {["negocios","pagos","gráficos"].map(t=>(
             <button key={t} className="main-tab" onClick={()=>setMainTab(t)} style={{
               flex:1,color:mainTab===t?"#e8e0d0":"#555",
               background:mainTab===t?"#1e1e1e":"none"
@@ -908,6 +1107,7 @@ export default function App() {
         </div>
       )}
 
+      {mainTab==="pagos"&&<PagosScreen/>}
       {mainTab==="gráficos"&&<GraficosGenerales negocios={negocios}/>}
 
       {showAddNegocio&&(
